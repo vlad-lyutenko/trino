@@ -32,6 +32,7 @@ import io.trino.plugin.deltalake.statistics.CachingExtendedStatisticsAccess;
 import io.trino.plugin.deltalake.transactionlog.MetadataEntry;
 import io.trino.plugin.deltalake.transactionlog.TransactionLogAccess;
 import io.trino.plugin.hive.NodeVersion;
+import io.trino.plugin.hive.gcs.HiveGcsModule;
 import io.trino.plugin.hive.metastore.Database;
 import io.trino.plugin.hive.metastore.HiveMetastoreFactory;
 import io.trino.plugin.hive.metastore.RawHiveMetastoreFactory;
@@ -160,6 +161,8 @@ public class TestDeltaLakeMetadata
                 // connector modules
                 new DeltaLakeMetastoreModule(),
                 new DeltaLakeModule(),
+                new HiveGcsModule(),
+                new DeltaGcsModule(),
                 // test setup
                 binder -> {
                     binder.bind(HdfsEnvironment.class).toInstance(HDFS_ENVIRONMENT);

@@ -153,6 +153,41 @@
             <groupId>io.trino</groupId>
             <artifactId>trino-delta-lake</artifactId>
             <scope>test</scope>
+            <exclusions>
+                <!-- Avoid dependency conflicts with the Google libraries pulled by trino-exchange-filesystem -->
+                <exclusion>
+                    <groupId>com.google.api-client</groupId>
+                    <artifactId>google-api-client</artifactId>
+                </exclusion>
+                <exclusion>
+                    <groupId>com.google.apis</groupId>
+                    <artifactId>google-api-services-storage</artifactId>
+                </exclusion>
+                <exclusion>
+                    <groupId>com.google.http-client</groupId>
+                    <artifactId>google-http-client-jackson2</artifactId>
+                </exclusion>
+                <exclusion>
+                    <groupId>com.google.http-client</groupId>
+                    <artifactId>google-http-client</artifactId>
+                </exclusion>
+                <exclusion>
+                    <groupId>com.google.cloud</groupId>
+                    <artifactId>google-cloud-core</artifactId>
+                </exclusion>
+                <exclusion>
+                    <groupId>com.google.auto.value</groupId>
+                    <artifactId>auto-value-annotations</artifactId>
+                </exclusion>
+                <exclusion>
+                    <groupId>io.opencensus</groupId>
+                    <artifactId>opencensus-api</artifactId>
+                </exclusion>
+                <exclusion>
+                    <groupId>io.opencensus</groupId>
+                    <artifactId>opencensus-contrib-http-util</artifactId>
+                </exclusion>
+            </exclusions>
         </dependency>
 
         <dependency>
@@ -160,6 +195,41 @@
             <artifactId>trino-delta-lake</artifactId>
             <type>test-jar</type>
             <scope>test</scope>
+            <exclusions>
+                <!-- Avoid dependency conflicts with the Google libraries pulled by trino-exchange-filesystem -->
+                <exclusion>
+                    <groupId>com.google.api-client</groupId>
+                    <artifactId>google-api-client</artifactId>
+                </exclusion>
+                <exclusion>
+                    <groupId>com.google.apis</groupId>
+                    <artifactId>google-api-services-storage</artifactId>
+                </exclusion>
+                <exclusion>
+                    <groupId>com.google.http-client</groupId>
+                    <artifactId>google-http-client-jackson2</artifactId>
+                </exclusion>
+                <exclusion>
+                    <groupId>com.google.http-client</groupId>
+                    <artifactId>google-http-client</artifactId>
+                </exclusion>
+                <exclusion>
+                    <groupId>com.google.cloud</groupId>
+                    <artifactId>google-cloud-core</artifactId>
+                </exclusion>
+                <exclusion>
+                    <groupId>com.google.auto.value</groupId>
+                    <artifactId>auto-value-annotations</artifactId>
+                </exclusion>
+                <exclusion>
+                    <groupId>io.opencensus</groupId>
+                    <artifactId>opencensus-api</artifactId>
+                </exclusion>
+                <exclusion>
+                    <groupId>io.opencensus</groupId>
+                    <artifactId>opencensus-contrib-http-util</artifactId>
+                </exclusion>
+            </exclusions>
         </dependency>
 
         <dependency>
