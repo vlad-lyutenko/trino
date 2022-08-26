@@ -62,8 +62,10 @@ import org.apache.iceberg.PartitionSpec;
 import org.apache.iceberg.Schema;
 import org.apache.iceberg.Table;
 import org.apache.iceberg.TableMetadata;
+import org.apache.iceberg.TableMetadataParser;
 import org.apache.iceberg.TableOperations;
 import org.apache.iceberg.Transaction;
+import org.apache.iceberg.io.FileIO;
 
 import java.time.Duration;
 import java.util.List;
@@ -104,6 +106,7 @@ import static io.trino.spi.connector.SchemaTableName.schemaTableName;
 import static java.lang.String.format;
 import static java.util.Objects.requireNonNull;
 import static org.apache.hadoop.hive.metastore.TableType.VIRTUAL_VIEW;
+import static org.apache.iceberg.BaseMetastoreTableOperations.METADATA_LOCATION_PROP;
 import static org.apache.iceberg.CatalogUtil.dropTableData;
 
 public class TrinoGlueCatalog
@@ -338,7 +341,7 @@ public class TrinoGlueCatalog
     {
         boolean newTableCreated = false;
         try {
-            Optional<com.amazonaws.services.glue.model.Table> table = getTable(from);
+            Optional<com.amazonaws.services.glue.model.Table> table = getTable(session, from);
             if (table.isEmpty()) {
                 throw new TableNotFoundException(from);
             }
@@ -365,15 +368,35 @@ public class TrinoGlueCatalog
         }
     }
 
-    private Optional<com.amazonaws.services.glue.model.Table> getTable(SchemaTableName schemaTableName)
+    private Optional<com.amazonaws.services.glue.model.Table> getTable(ConnectorSession session, SchemaTableName schemaTableName)
     {
         try {
-            return Optional.of(
-                    stats.getGetTable().call(() ->
-                            glueClient.getTable(new GetTableRequest()
+            com.amazonaws.services.glue.model.Table table = stats.getGetTable().call(() ->
+                    glueClient.getTable(new GetTableRequest()
                                     .withDatabaseName(schemaTableName.getSchemaName())
                                     .withName(schemaTableName.getTableName()))
-                                    .getTable()));
+                            .getTable());
+
+            if (isIcebergTable(table.getParameters()) && !tableMetadataCache.containsKey(schemaTableName)) {
+                String metadataLocation = table.getParameters().get(METADATA_LOCATION_PROP);
+                try {
+                    // Cache the TableMetadata while we have the Table retrieved anyway
+                    TableOperations operations = tableOperationsProvider.createTableOperations(
+                            this,
+                            session,
+                            schemaTableName.getSchemaName(),
+                            schemaTableName.getTableName(),
+                            Optional.empty(),
+                            Optional.empty());
+                    FileIO io = operations.io();
+                    tableMetadataCache.put(schemaTableName, TableMetadataParser.read(io, io.newInputFile(metadataLocation)));
+                }
+                catch (RuntimeException e) {
+                    LOG.warn(e, "Failed to cache table metadata from table at %s", metadataLocation);
+                }
+            }
+
+            return Optional.of(table);
         }
         catch (EntityNotFoundException e) {
             return Optional.empty();
@@ -443,12 +466,12 @@ public class TrinoGlueCatalog
                 .withMaxRetries(3)
                 .withDelay(Duration.ofMillis(100))
                 .abortIf(throwable -> !replace || throwable instanceof ViewAlreadyExistsException))
-                .run(() -> doCreateView(schemaViewName, viewTableInput, replace));
+                .run(() -> doCreateView(session, schemaViewName, viewTableInput, replace));
     }
 
-    private void doCreateView(SchemaTableName schemaViewName, TableInput viewTableInput, boolean replace)
+    private void doCreateView(ConnectorSession session, SchemaTableName schemaViewName, TableInput viewTableInput, boolean replace)
     {
-        Optional<com.amazonaws.services.glue.model.Table> existing = getTable(schemaViewName);
+        Optional<com.amazonaws.services.glue.model.Table> existing = getTable(session, schemaViewName);
         if (existing.isPresent()) {
             if (!replace || !isPrestoView(existing.get().getParameters())) {
                 // TODO: ViewAlreadyExists is misleading if the name is used by a table https://github.com/trinodb/trino/issues/10037
@@ -478,7 +501,7 @@ public class TrinoGlueCatalog
     {
         boolean newTableCreated = false;
         try {
-            Optional<com.amazonaws.services.glue.model.Table> existingView = getTable(source);
+            Optional<com.amazonaws.services.glue.model.Table> existingView = getTable(session, source);
             if (existingView.isEmpty()) {
                 throw new TableNotFoundException(source);
             }
@@ -565,7 +588,12 @@ public class TrinoGlueCatalog
     @Override
     public Optional<ConnectorViewDefinition> getView(ConnectorSession session, SchemaTableName viewName)
     {
-        Optional<com.amazonaws.services.glue.model.Table> table = getTable(viewName);
+        if (tableMetadataCache.containsKey(viewName)) {
+            // Entries in the cache are Iceberg tables. If the cache has an entry with this name it cannot be a view
+            return Optional.empty();
+        }
+
+        Optional<com.amazonaws.services.glue.model.Table> table = getTable(session, viewName);
         if (table.isEmpty()) {
             return Optional.empty();
         }
@@ -644,7 +672,7 @@ public class TrinoGlueCatalog
             boolean replace,
             boolean ignoreExisting)
     {
-        Optional<com.amazonaws.services.glue.model.Table> existing = getTable(viewName);
+        Optional<com.amazonaws.services.glue.model.Table> existing = getTable(session, viewName);
 
         if (existing.isPresent()) {
             if (!isTrinoMaterializedView(existing.get().getTableType(), existing.get().getParameters())) {
@@ -696,7 +724,7 @@ public class TrinoGlueCatalog
     @Override
     public void dropMaterializedView(ConnectorSession session, SchemaTableName viewName)
     {
-        com.amazonaws.services.glue.model.Table view = getTable(viewName)
+        com.amazonaws.services.glue.model.Table view = getTable(session, viewName)
                 .orElseThrow(() -> new MaterializedViewNotFoundException(viewName));
 
         if (!isTrinoMaterializedView(view.getTableType(), view.getParameters())) {
@@ -724,7 +752,12 @@ public class TrinoGlueCatalog
     @Override
     protected Optional<ConnectorMaterializedViewDefinition> doGetMaterializedView(ConnectorSession session, SchemaTableName viewName)
     {
-        Optional<com.amazonaws.services.glue.model.Table> maybeTable = getTable(viewName);
+        if (tableMetadataCache.containsKey(viewName)) {
+            // Entries in the cache are Iceberg tables. If the cache has an entry with this name it cannot be a materialized view
+            return Optional.empty();
+        }
+
+        Optional<com.amazonaws.services.glue.model.Table> maybeTable = getTable(session, viewName);
         if (maybeTable.isEmpty()) {
             return Optional.empty();
         }
@@ -770,7 +803,7 @@ public class TrinoGlueCatalog
     {
         boolean newTableCreated = false;
         try {
-            Optional<com.amazonaws.services.glue.model.Table> table = getTable(source);
+            Optional<com.amazonaws.services.glue.model.Table> table = getTable(session, source);
             if (table.isEmpty()) {
                 throw new TableNotFoundException(source);
             }
@@ -820,7 +853,7 @@ public class TrinoGlueCatalog
                 tableName.getSchemaName(),
                 tableName.getTableName().substring(0, metadataMarkerIndex));
 
-        Optional<com.amazonaws.services.glue.model.Table> table = getTable(new SchemaTableName(tableNameBase.getSchemaName(), tableNameBase.getTableName()));
+        Optional<com.amazonaws.services.glue.model.Table> table = getTable(session, new SchemaTableName(tableNameBase.getSchemaName(), tableNameBase.getTableName()));
 
         if (table.isEmpty() || VIRTUAL_VIEW.name().equals(table.get().getTableType())) {
             return Optional.empty();
