@@ -62,6 +62,7 @@ import static io.trino.plugin.iceberg.TableType.SNAPSHOTS;
 import static io.trino.plugin.iceberg.catalog.glue.GlueMetastoreMethod.CREATE_TABLE;
 import static io.trino.plugin.iceberg.catalog.glue.GlueMetastoreMethod.GET_DATABASE;
 import static io.trino.plugin.iceberg.catalog.glue.GlueMetastoreMethod.GET_TABLE;
+import static io.trino.plugin.iceberg.catalog.glue.GlueMetastoreMethod.UPDATE_TABLE;
 import static io.trino.testing.TestingSession.testSessionBuilder;
 import static io.trino.testing.sql.TestTable.randomTableSuffix;
 import static java.lang.String.format;
@@ -193,7 +194,7 @@ public class TestIcebergGlueCatalogAccessOperations
 
             assertGlueMetastoreApiInvocations("SELECT * FROM test_select_view_view",
                     ImmutableMultiset.builder()
-                            .addCopies(GET_TABLE, 3)
+                            .addCopies(GET_TABLE, 2)
                             .build());
         }
         finally {
@@ -211,7 +212,7 @@ public class TestIcebergGlueCatalogAccessOperations
 
             assertGlueMetastoreApiInvocations("SELECT * FROM test_select_view_where_view WHERE age = 2",
                     ImmutableMultiset.builder()
-                            .addCopies(GET_TABLE, 3)
+                            .addCopies(GET_TABLE, 2)
                             .build());
         }
         finally {
@@ -238,7 +239,7 @@ public class TestIcebergGlueCatalogAccessOperations
         }
     }
 
-    @Test(enabled = false)
+    @Test
     public void testSelectFromMaterializedViewWithFilter()
     {
         try {
@@ -256,7 +257,7 @@ public class TestIcebergGlueCatalogAccessOperations
         }
     }
 
-    @Test(enabled = false)
+    @Test
     public void testRefreshMaterializedView()
     {
         try {
@@ -265,7 +266,8 @@ public class TestIcebergGlueCatalogAccessOperations
 
             assertGlueMetastoreApiInvocations("REFRESH MATERIALIZED VIEW test_refresh_mview_view",
                     ImmutableMultiset.builder()
-                            .addCopies(GET_TABLE, 5)
+                            .addCopies(GET_TABLE, 9)
+                            .addCopies(UPDATE_TABLE, 2)
                             .build());
         }
         finally {
@@ -365,37 +367,37 @@ public class TestIcebergGlueCatalogAccessOperations
             // select from $history
             assertGlueMetastoreApiInvocations("SELECT * FROM \"test_select_snapshots$history\"",
                     ImmutableMultiset.builder()
-                            .addCopies(GET_TABLE, 1)
+                            .add(GET_TABLE)
                             .build());
 
             // select from $snapshots
             assertGlueMetastoreApiInvocations("SELECT * FROM \"test_select_snapshots$snapshots\"",
                     ImmutableMultiset.builder()
-                            .addCopies(GET_TABLE, 1)
+                            .add(GET_TABLE)
                             .build());
 
             // select from $manifests
             assertGlueMetastoreApiInvocations("SELECT * FROM \"test_select_snapshots$manifests\"",
                     ImmutableMultiset.builder()
-                            .addCopies(GET_TABLE, 1)
+                            .add(GET_TABLE)
                             .build());
 
             // select from $partitions
             assertGlueMetastoreApiInvocations("SELECT * FROM \"test_select_snapshots$partitions\"",
                     ImmutableMultiset.builder()
-                            .addCopies(GET_TABLE, 1)
+                            .add(GET_TABLE)
                             .build());
 
             // select from $files
             assertGlueMetastoreApiInvocations("SELECT * FROM \"test_select_snapshots$files\"",
                     ImmutableMultiset.builder()
-                            .addCopies(GET_TABLE, 1)
+                            .add(GET_TABLE)
                             .build());
 
             // select from $properties
             assertGlueMetastoreApiInvocations("SELECT * FROM \"test_select_snapshots$properties\"",
                     ImmutableMultiset.builder()
-                            .addCopies(GET_TABLE, 1)
+                            .add(GET_TABLE)
                             .build());
 
             // This test should get updated if a new system table is added.

@@ -120,6 +120,8 @@ public class TrinoGlueCatalog
     private final GlueMetastoreStats stats;
 
     private final Map<SchemaTableName, TableMetadata> tableMetadataCache = new ConcurrentHashMap<>();
+    private final Map<SchemaTableName, ConnectorViewDefinition> viewCache = new ConcurrentHashMap<>();
+    private final Map<SchemaTableName, ConnectorMaterializedViewDefinition> materializedViewCache = new ConcurrentHashMap<>();
 
     public TrinoGlueCatalog(
             CatalogName catalogName,
@@ -395,6 +397,28 @@ public class TrinoGlueCatalog
                     LOG.warn(e, "Failed to cache table metadata from table at %s", metadataLocation);
                 }
             }
+            else if (isTrinoMaterializedView(table.getTableType(), table.getParameters())) {
+                try {
+                    createMaterializedViewDefinition(session, schemaTableName, table)
+                            .ifPresent(materializedView -> materializedViewCache.put(schemaTableName, materializedView));
+                }
+                catch (RuntimeException e) {
+                    LOG.warn(e, "Failed to cache materialized view from %s", schemaTableName);
+                }
+            }
+            else if (isPrestoView(table.getParameters()) && !viewCache.containsKey(schemaTableName)) {
+                try {
+                    getView(schemaTableName,
+                            Optional.ofNullable(table.getViewOriginalText()),
+                            table.getTableType(),
+                            table.getParameters(),
+                            Optional.ofNullable(table.getOwner()))
+                            .ifPresent(viewDefinition -> viewCache.put(schemaTableName, viewDefinition));
+                }
+                catch (RuntimeException e) {
+                    LOG.warn(e, "Failed to cache view from %s", schemaTableName);
+                }
+            }
 
             return Optional.of(table);
         }
@@ -588,8 +612,13 @@ public class TrinoGlueCatalog
     @Override
     public Optional<ConnectorViewDefinition> getView(ConnectorSession session, SchemaTableName viewName)
     {
-        if (tableMetadataCache.containsKey(viewName)) {
-            // Entries in the cache are Iceberg tables. If the cache has an entry with this name it cannot be a view
+        ConnectorViewDefinition cachedView = viewCache.get(viewName);
+        if (cachedView != null) {
+            return Optional.of(cachedView);
+        }
+
+        if (tableMetadataCache.containsKey(viewName) || materializedViewCache.containsKey(viewName)) {
+            // Entries in these caches are not views
             return Optional.empty();
         }
 
@@ -752,8 +781,13 @@ public class TrinoGlueCatalog
     @Override
     protected Optional<ConnectorMaterializedViewDefinition> doGetMaterializedView(ConnectorSession session, SchemaTableName viewName)
     {
-        if (tableMetadataCache.containsKey(viewName)) {
-            // Entries in the cache are Iceberg tables. If the cache has an entry with this name it cannot be a materialized view
+        ConnectorMaterializedViewDefinition materializedViewDefinition = materializedViewCache.get(viewName);
+        if (materializedViewDefinition != null) {
+            return Optional.of(materializedViewDefinition);
+        }
+
+        if (tableMetadataCache.containsKey(viewName) || viewCache.containsKey(viewName)) {
+            // Entries in these caches are not materialized views.
             return Optional.empty();
         }
 
@@ -767,6 +801,14 @@ public class TrinoGlueCatalog
             return Optional.empty();
         }
 
+        return createMaterializedViewDefinition(session, viewName, table);
+    }
+
+    private Optional<ConnectorMaterializedViewDefinition> createMaterializedViewDefinition(
+            ConnectorSession session,
+            SchemaTableName viewName,
+            com.amazonaws.services.glue.model.Table table)
+    {
         Map<String, String> materializedViewParameters = table.getParameters();
         String storageTable = materializedViewParameters.get(STORAGE_TABLE);
         checkState(storageTable != null, "Storage table missing in definition of materialized view " + viewName);
