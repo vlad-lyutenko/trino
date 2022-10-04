@@ -220,12 +220,16 @@ public abstract class BaseHiveConnectorTest
         return queryRunner;
     }
 
+    @SuppressWarnings("DuplicateBranchesInSwitch")
     @Override
     protected boolean hasBehavior(TestingConnectorBehavior connectorBehavior)
     {
         switch (connectorBehavior) {
             case SUPPORTS_TOPN_PUSHDOWN:
                 return false;
+
+            case SUPPORTS_COMMENT_ON_VIEW:
+                return true;
 
             case SUPPORTS_CREATE_VIEW:
                 return true;
@@ -234,8 +238,6 @@ public abstract class BaseHiveConnectorTest
                 return false;
 
             case SUPPORTS_DELETE:
-                return true;
-
             case SUPPORTS_UPDATE:
                 return true;
 
@@ -244,9 +246,6 @@ public abstract class BaseHiveConnectorTest
                 return false;
 
             case SUPPORTS_MULTI_STATEMENT_WRITES:
-                return true;
-
-            case SUPPORTS_COMMENT_ON_VIEW:
                 return true;
 
             default:
@@ -8285,6 +8284,24 @@ public abstract class BaseHiveConnectorTest
         assertExplainAnalyze(
                 "EXPLAIN ANALYZE VERBOSE SELECT * FROM nation a",
                 "'Physical input read time' = \\{duration=.*}");
+    }
+
+    @Test
+    public void testExplainAnalyzeScanFilterProjectWallTime()
+    {
+        assertExplainAnalyze(
+                "EXPLAIN ANALYZE VERBOSE SELECT nationkey * 2 FROM nation WHERE nationkey > 0",
+                "'Filter CPU time' = \\{duration=.*}",
+                "'Projection CPU time' = \\{duration=.*}");
+    }
+
+    @Test
+    public void testExplainAnalyzeFilterProjectWallTime()
+    {
+        assertExplainAnalyze(
+                "EXPLAIN ANALYZE VERBOSE SELECT * FROM (SELECT nationkey, count(*) cnt FROM nation GROUP BY 1) where cnt > 0",
+                "'Filter CPU time' = \\{duration=.*}",
+                "'Projection CPU time' = \\{duration=.*}");
     }
 
     private static final Set<HiveStorageFormat> NAMED_COLUMN_ONLY_FORMATS = ImmutableSet.of(HiveStorageFormat.AVRO, HiveStorageFormat.JSON);
